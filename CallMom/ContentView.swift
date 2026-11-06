@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var showConfirmCall = false
     @State private var showChecklist = false
     @State private var showCopied = false
+    @State private var showOpenedInApp = false
     @State private var showNoNumberAlert = false
     @State private var draftName = ""
     @State private var draftNumber = ""
@@ -50,11 +51,18 @@ struct ContentView: View {
                         .disabled(!hasNumber)
                         .opacity(hasNumber ? 1 : 0.6)
 
-                        Text("Opens Google Voice on Wi-Fi. No carrier minutes, no ship roaming — if Google Voice is set to “Prefer Wi-Fi and mobile data.”")
+                        Text("Opens the Google Voice APP on Wi-Fi — not Safari. Safari would call your cellphone first to connect, and that times out in Airplane Mode. Number is copied too, so if Voice opens to its home screen, tap Calls > keypad, paste, and call.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 8)
+
+                        if showOpenedInApp {
+                            Text("Opened in Google Voice. If it didn't pre-dial: Calls > keypad, long-press to paste \(displayNumber), then Call. You're in the app, so it uses Prefer Wi-Fi and mobile data.")
+                                .font(.footnote).foregroundStyle(.green)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                        }
 
                         if !hasNumber {
                             Button("Add Mom's number") { openEdit() }
@@ -65,12 +73,13 @@ struct ContentView: View {
                     // Secondary actions
                     HStack(spacing: 12) {
                         Button("Open Voice app") {
+                            _ = GoogleVoiceCaller.copyNumber(momNumber)
                             _ = GoogleVoiceCaller.openGoogleVoiceApp()
-                            recordAttempt(method: GoogleVoiceCaller.Handoff.appScheme.rawValue)
+                            recordAttempt(method: GoogleVoiceCaller.Handoff.appOpenCopy.rawValue)
                         }
                         .buttonStyle(.bordered)
                         Button("Copy number") {
-                            UIPasteboard.general.string = GoogleVoiceCaller.formatted(momNumber)
+                            _ = GoogleVoiceCaller.copyNumber(momNumber)
                             showCopied = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { showCopied = false }
                         }
@@ -83,6 +92,13 @@ struct ContentView: View {
                         Text("Copied — paste it into Google Voice if the handoff ever fails.")
                             .font(.footnote).foregroundStyle(.green)
                     }
+                    Button("Web (carrier callback) — only if the app won't open") {
+                        if GoogleVoiceCaller.callViaWebCallback(momNumber) {
+                            recordAttempt(method: GoogleVoiceCaller.Handoff.webCallback.rawValue)
+                        }
+                    }
+                    .font(.footnote)
+                    .disabled(!hasNumber)
 
                     // Last call
                     if !lastCallISO.isEmpty {
@@ -108,7 +124,7 @@ struct ContentView: View {
                         if showChecklist {
                             checklistRow("1.", "In Google Voice: Settings → Make and receive calls → Prefer Wi-Fi and mobile data. Not “Use carrier only.”")
                             checklistRow("2.", "On the ship: Airplane Mode ON, Wi-Fi ON, connect to ship Wi-Fi. Turn Data Roaming OFF.")
-                            checklistRow("3.", "Test at home first: Airplane Mode + Wi-Fi on, call Mom. If it works there, it works on the ship's Wi-Fi.")
+                            checklistRow("3.", "Test at home first: Airplane Mode + Wi-Fi on, tap Call Mom in THIS app. It must open the Voice app — if it opens Safari and tries to call your cellphone, stop and use the Voice app directly; v1.0.1 fixes that, v1.0.0 had it backwards.")
                             checklistRow("4.", "If the ship blocks VoIP, the call will fail to connect — try again on deck / near an access point, or in port on shore Wi-Fi.")
                             checklistRow("5.", "Google Voice can't call 911. For emergencies use the ship's phone / crew.")
                         } else {
@@ -137,10 +153,10 @@ struct ContentView: View {
                 isPresented: $showConfirmCall,
                 titleVisibility: .visible
             ) {
-                Button("Call via Google Voice") { doCall() }
+                Button("Call in Google Voice app") { doCall() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This leaves Call Mom and opens voice.google.com — Google Voice will dial \(displayNumber) over Wi-Fi/data with your Google Voice number as caller ID. Make sure you're on ship Wi-Fi with Airplane Mode on.")
+                Text("This opens the Google Voice APP (not Safari) and copies \(displayNumber) to the clipboard. If Voice doesn't pre-dial, tap Calls > keypad, paste, and call — you're in the app, so it uses Prefer Wi-Fi and mobile data. Make sure you're on ship Wi-Fi with Airplane Mode on.")
             }
             .alert("Add Mom's number first", isPresented: $showNoNumberAlert) {
                 Button("Add number") { openEdit() }
@@ -167,7 +183,7 @@ struct ContentView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if !GoogleVoiceCaller.isGoogleVoiceInstalled() {
-                Text("Google Voice app not detected — install it from the App Store and sign in before sailing. The web handoff still works in Safari.")
+                Text("Google Voice app not detected — install it from the App Store and sign in before sailing. Without the app, Call Mom can only open the Safari web page, which calls your cellphone first (carrier callback) and will time out in Airplane Mode.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -225,8 +241,10 @@ struct ContentView: View {
     }
 
     private func doCall() {
-        if GoogleVoiceCaller.callViaWeb(momNumber) {
-            recordAttempt(method: GoogleVoiceCaller.Handoff.webURL.rawValue)
+        GoogleVoiceCaller.callViaApp(momNumber) { method in
+            recordAttempt(method: method.rawValue)
+            showOpenedInApp = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { showOpenedInApp = false }
         }
     }
 
